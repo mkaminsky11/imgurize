@@ -1,10 +1,44 @@
 //0b4d9e43c145774
 //74542f2b794fdb874d9d790de40dccf7bb09a8da
+
+
+///album/{id}/images
+//https://api.imgur.com/3/account/imgur/images/0.json?perPage=42&page=6
+
+//TODO: loading bar!
+//highlight links?
+//TODO: gallery search (s)
+//TODO: random (w)
+//TODO: refresh (r)
+//TODO: user search (a)
+//TODO: newest? (u) [DONE!]
+//TODO: back to gallery (g) [DONE!]
+//TODO: help (h)
+//TODO: convert to actual shell program
+
 var blessed = require('blessed');
 var fs = require('fs');
 var request = require('request');
 var ImageToAscii = require("image-to-ascii");
+var colors = require('colors');
 var program = blessed.program();
+
+var num = 0;
+var gallery = null;
+var album = null;
+var album_content = [];
+var user = null;
+var page = 0;
+var scroll = 0;
+var per_page = 30;
+var image_count = null;
+var image_cutoff = 10;
+var curr = [];
+var comments = null;
+var _section = "hot";
+var _sort = "viral";
+var user_mode = false;
+var _user = null;
 
 var screen = blessed.screen({
   autoPadding: true,
@@ -21,7 +55,7 @@ var layout = blessed.layout({
 var title_text = blessed.text({
   width: '100%',
   align: 'center',
-  content: 'imgurizer',
+  content: ("imgurizer | " + "gallery".white),
   style: {
     fg: 'black',
     bg: '#2ECC71'
@@ -43,6 +77,21 @@ var post_text = blessed.text({
   }
 });
 
+var post_info = blessed.text({
+  width: '100%',
+  align: 'center',
+  content: 'press \"h\" for help!',
+  border: {
+    type: 'line'
+  },
+  style: {
+    fg: '#eee',
+    border: {
+      fg: '#eee'
+    }
+  }
+});
+
 var content_box = blessed.box({
   width: '100%',
   content: '',
@@ -56,52 +105,86 @@ var content_box = blessed.box({
   alwaysScroll: true
 });
 
-var post_box = blessed.box({
+var post_box = blessed.layout({
   content: '',
-  align: 'center',
+  width: '100%',
+  height: 'shrink',
   style: {
     fg: 'white',
+    border: {
+      fg: 'white'
+    }
   },
   scrollable: true,
   alwaysScroll: true
 });
 
-var title_line = blessed.line({
-  width: '100%',
-  orientation: 'horizontal',
-  style: {
-    fg: 'white'
-  }
-});
-
 screen.append(layout);
 layout.append(title_text);
 layout.append(post_text);
+layout.append(post_info);
 layout.append(content_box);
 content_box.append(post_box);
-//content_box.append(title_line);
 
-getGallery(0, function(err, res, body){
-  //TODO: handle error
-  if(!err){
-    gallery = JSON.parse(body).data;
-    setPost(0);
-  }
-  else{
-    console.log("error!")
-  }
-});
+init();
 
 screen.render();
 
-var num = 0;
-var gallery = null;
-var page = 0;
-var scroll = 0;
+var monthNames = [
+        "January", "February", "March",
+        "April", "May", "June", "July",
+        "August", "September", "October",
+        "November", "December"
+    ];
 
 function getGallery(page, callback){
+  if(user_mode === false){
+    request({
+      url: ("https://api.imgur.com/3/gallery/"+_section+"/"+_sort+"/0.json?page=" + page),
+      headers: {
+        "Authorization": "Client-ID 0b4d9e43c145774"
+      }
+    }, callback);
+  }
+  else{
+    getUserImages(page, callback);
+  }
+};
+
+function getComments(id,album,callback){
+  var type = "image";
+  if(album){type="album"}
+
+  var url = "https://api.imgur.com/3/"+type+"/"+id+"/comments";
   request({
-    url: "https://api.imgur.com/3/gallery.json?page=" + page + "&perPage=30",
+    url: url,
+    headers: {
+      "Authorization": "Client-ID 0b4d9e43c145774"
+    }
+  }, callback);
+};
+
+function getUser(userName, callback){
+  request({
+    url: "https://api.imgur.com/3/account/"+userName,
+    headers: {
+      "Authorization": "Client-ID 0b4d9e43c145774"
+    }
+  }, callback);
+}
+
+function getUserImages(page, callback){
+  request({
+    url: "https://api.imgur.com/3/account/"+_user+"/submissions/0.json?page=" + page + "&perPage=" + per_page,
+    headers: {
+      "Authorization": "Client-ID 0b4d9e43c145774"
+    }
+  }, callback);
+};
+
+function getAlbum(albumId, page, callback){
+  request({
+    url: "https://api.imgur.com/3/album/"+albumId+"/images/0.json?page=" + page + "&perPage=" + per_page,
     headers: {
       "Authorization": "Client-ID 0b4d9e43c145774"
     }
@@ -110,63 +193,64 @@ function getGallery(page, callback){
 
 function setPost(num){
   var obj = gallery[num];
-  //console.log(obj);
   if(obj.title){
+    var info = ""
+    if(obj.account_url){
+      info =  "by " + obj.account_url.blue;
+    }
+    var date = new Date(0);
+    date.setUTCSeconds(obj.datetime);
+    var day = date.getDate();
+    var monthIndex = date.getMonth();
+    var year = date.getFullYear();
+    info += " on " + (day + "/" + monthNames[monthIndex] + "/" + year).yellow;
+    info += " " + String(obj.ups).green + " " + String(obj.downs).red;
+    info += " " + obj.comment_count + " comments";
     post_text.setContent(obj.title);
+    post_info.setContent(info);
   }
   else{
     post_text.setContent("no title");
   }
-
-  post_box.setContent("");
-  //link
-  if(obj.is_album === false){
-    if(obj.type === "image/png" || obj.type === "image/jpeg"){
-      ImageToAscii(obj.link, function(err, converted) {
-          if(converted){
-            post_box.pushLine(converted);
-          }
-          else{
-            post_box.pushLine("no content");
-          }
-
-          if(obj.description){
-            post_box.pushLine(obj.description);
-          }
-          else{
-
-          }
-
-        screen.render();
-      });
-    }
-    else{
-      post_box.pushLine("gif");
-      screen.render();
-    }
+  clearContent();
+  if(obj.is_album !== true){
+    curr = [obj.id];
+    addPost(obj);
   }
   else{
-    post_box.pushLine("album");
+    image_count = obj.image_count;
+    album_content = [];
+    try{
+      album_content = new Array(Math.min(obj.images_count, image_cutoff) + 1);
+    }
+    catch(e){
+      console.log(obj);
+    }
+    var album_id = obj.link.split("/").reverse()[0];
+    curr = [obj.id];
+    getAlbum(album_id, 1, function(err, res, body){
+      formatComments(album_id, true);
+      if(curr[0] === obj.link){
+        var the_album = JSON.parse(body).data;
+        //get all descs and stuff from link
+        for(var i = 0; i < the_album.length; i++){
+          curr.push(the_album[i].id);
+          addAlbumPost(i, the_album[i]);
+        }
+      }
+    });
     screen.render();
   }
 }
 
 screen.key('down', function(ch, key) {
-  if(scroll < post_box.height){
     scroll+=1;
-    post_box.scrollTo(scroll);
-    screen.render();
-  }
+    setScroll();
 });
-
 screen.key('up', function(ch, key) {
-  if(scroll > 0){
     scroll-=1;
-    post_box.scrollTo(scroll);
-    screen.render();
-  }
+    setScroll();
 });
-
 screen.key('left', function(ch, key) {
   if(num === 0){
     if(page === 0){
@@ -174,16 +258,15 @@ screen.key('left', function(ch, key) {
     }
     else{
       page--;
-      num = 29;
-
       getGallery(page, function(err, res, body){
         //TODO: handle error
-        if(!err){
-          gallery = JSON.parse(body).data;
-          setPost(29);
+        var json = JSON.parse(body).data;
+        if(!err && json.length > 0){
+          gallery = json;
+          num = gallery.length - 1;
+          setPost(num);
         }
         else{
-          console.log("error!")
         }
       });
     }
@@ -195,13 +278,14 @@ screen.key('left', function(ch, key) {
 });
 
 screen.key('right', function(ch, key) {
-  if(num === 29){
+  if(num === (gallery.length - 1)){
     page++;
     num = 0;
     getGallery(page, function(err, res, body){
       //TODO: handle error
-      if(!err){
-        gallery = JSON.parse(body).data;
+      var json = JSON.parse(body).data;
+      if(!err && json.length > 0){
+        gallery = json;
         setPost(0);
       }
       else{
@@ -215,7 +299,138 @@ screen.key('right', function(ch, key) {
     setPost(num);
   }
 });
+//TODO: fix
+screen.key('u', function(ch, key){
+  title_text.setContent("imgurizer | " + "usersub/newest".white);
+  user_mode = false;
+  //user-sub
+  _section = "user";
+  _sort = "time";
+  page = 0;
+  num = 0;
+  init();
+});
+
+screen.key('g', function(ch, key){
+  title_text.setContent("imgurizer | " + "gallery".white);
+  user_mode = false;
+  _section = "hot";
+  _sort = "viral";
+  page = 0;
+  num = 0;
+  init();
+});
+
+screen.key('a', function(ch, key){
+  var prompt = blessed.prompt({
+    vi: true,
+    keys: true
+  });
+
+  screen.append(prompt);
+  prompt.input("Search for a user","", function(err, value){
+    //title_text.setContent(value);
+    getUser(value, function(err, res, body){
+      if(JSON.parse(body).success === true){
+        user_mode = true;
+        _user = value;
+        title_text.setContent("imgurizer | " + ("user:" + _user).white);
+        init();
+      }
+      else{
+        title_text.setContent("imgurizer | " + "user not found!".white);
+      }
+    });
+
+    screen.remove(prompt);
+    screen.render();
+  });
+});
 
 screen.key(['escape', 'q', 'C-c'], function(ch, key) {
   return process.exit(0);
 });
+
+function clearContent(){
+  post_box.setContent("");
+}
+
+function addPost(obj){
+  ImageToAscii(obj.link, function(err, converted) {
+    if(curr.indexOf(obj.id) !== -1){
+      if(converted){post_box.pushLine(converted);}
+      else{post_box.pushLine("error loading content");}
+
+      if(err){post_box.pushLine(err)}
+
+      if(obj.description){  post_box.pushLine(obj.description);}
+
+      formatComments(obj.id, false);
+      scroll = 0;
+      setScroll();
+      screen.render();
+    }
+  });
+}
+
+function addAlbumPost(index, obj){
+  ImageToAscii(obj.link, function(err, converted) {
+    if(curr.indexOf(obj.id) !== -1){
+      if(converted){}
+      else{converted = "error loading content";}
+
+      if(obj.description){}
+      else{obj.description = "";}
+      album_content[index] = converted + obj.description;
+      post_box.setContent(album_content.join("\n"));
+      scroll = 0;
+      setScroll();
+      screen.render();
+    }
+  });
+}
+
+function setScroll(){
+  post_box.scrollTo(scroll);
+  screen.render();
+}
+
+function formatComments(id, album){
+  getComments(id, album, function(err, res, body){
+    comments = JSON.parse(body).data;
+    var res = "\n\n" + "Comments".bold.underline.blue + "\n";
+    for(var i = 0; i < comments.length; i++){
+      var the_comment = "| " + comments[i].author.yellow + " " + String(comments[i].ups).green + " " + String(comments[i].downs).red + " " + comments[i].children.length + " replies";
+      the_comment += "\n+-" + comments[i].comment + "\n|\n";
+      res += the_comment;
+    }
+    if(album){
+      if(curr.indexOf(id) !== -1){
+        album_content[album_content.length - 1] = res;
+        post_box.setContent(album_content.join("\n"));
+        scroll = 0;
+        setScroll();
+        screen.render();
+      }
+    }
+    else{
+      if(curr.indexOf(id) !== -1){
+        post_box.pushLine(res);
+      }
+    }
+  });
+}
+
+function init(){
+  getGallery(0, function(err, res, body){
+    //TODO: handle error
+      var json = JSON.parse(body).data;
+      if(!err && json.length > 0){
+        gallery = json;
+        setPost(0);
+      }
+      else{
+        console.log("error!")
+      }
+  });
+}
