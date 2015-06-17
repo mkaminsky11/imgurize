@@ -2,7 +2,7 @@
 an Imgur browser in the terminal.
 
 ```shell
-npm install imgurize #install
+sudo npm install -g imgurize #install
 imgurize #run
 ```
 
