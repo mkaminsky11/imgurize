@@ -1,16 +1,12 @@
 //0b4d9e43c145774
 //74542f2b794fdb874d9d790de40dccf7bb09a8da
 
-
-///album/{id}/images
-//https://api.imgur.com/3/account/imgur/images/0.json?perPage=42&page=6
-
 //TODO: loading bar!
 //highlight links?
 //TODO: gallery search (s)
 //TODO: random (w)
 //TODO: refresh (r)
-//TODO: user search (a)
+//TODO: user search (a) [DONE!]
 //TODO: newest? (u) [DONE!]
 //TODO: back to gallery (g) [DONE!]
 //TODO: help (h)
@@ -33,12 +29,15 @@ var scroll = 0;
 var per_page = 30;
 var image_count = null;
 var image_cutoff = 10;
+var comment_cutoff = 5;
 var curr = [];
 var comments = null;
 var _section = "hot";
 var _sort = "viral";
 var user_mode = false;
 var _user = null;
+var search_mode = false;
+var _search = null;
 
 var screen = blessed.screen({
   autoPadding: true,
@@ -130,23 +129,24 @@ init();
 
 screen.render();
 
-var monthNames = [
-        "January", "February", "March",
-        "April", "May", "June", "July",
-        "August", "September", "October",
-        "November", "December"
-    ];
+var monthNames = ["January", "February", "March","April", "May", "June", "July","August", "September", "October","November", "December"];
 
 function getGallery(page, callback){
-  if(user_mode === false){
+  if(user_mode === false && search_mode === false){
     request({
       url: ("https://api.imgur.com/3/gallery/"+_section+"/"+_sort+"/0.json?page=" + page),
       headers: {
         "Authorization": "Client-ID 0b4d9e43c145774"
       }
     }, callback);
+    //as a test
+    //callback(null, null, "{\"data\":[]}");
   }
-  else{
+  else if(user_mode === false && search_mode === true){
+    //search mode!
+    getSearchImages(page, callback);
+  }
+  else{ //if user_mode, get from user submissions to gallery
     getUserImages(page, callback);
   }
 };
@@ -154,7 +154,6 @@ function getGallery(page, callback){
 function getComments(id,album,callback){
   var type = "image";
   if(album){type="album"}
-
   var url = "https://api.imgur.com/3/"+type+"/"+id+"/comments";
   request({
     url: url,
@@ -164,7 +163,7 @@ function getComments(id,album,callback){
   }, callback);
 };
 
-function getUser(userName, callback){
+function getUser(userName, callback){ //user info
   request({
     url: "https://api.imgur.com/3/account/"+userName,
     headers: {
@@ -172,6 +171,15 @@ function getUser(userName, callback){
     }
   }, callback);
 }
+
+function getSearchImages(page, callback){
+  request({
+    url: "https://api.imgur.com/3/gallery/search/viral/" + page + "?q=" + encodeURIComponent(_search),
+    headers: {
+      "Authorization": "Client-ID 0b4d9e43c145774"
+    }
+  }, callback);
+};
 
 function getUserImages(page, callback){
   request({
@@ -224,13 +232,12 @@ function setPost(num){
       album_content = new Array(Math.min(obj.images_count, image_cutoff) + 1);
     }
     catch(e){
-      console.log(obj);
     }
     var album_id = obj.link.split("/").reverse()[0];
     curr = [obj.id];
-    getAlbum(album_id, 1, function(err, res, body){
+    getAlbum(album_id, 0, function(err, res, body){
       formatComments(album_id, true);
-      if(curr[0] === obj.link){
+      if(curr[0] === obj.id){
         var the_album = JSON.parse(body).data;
         //get all descs and stuff from link
         for(var i = 0; i < the_album.length; i++){
@@ -299,10 +306,11 @@ screen.key('right', function(ch, key) {
     setPost(num);
   }
 });
-//TODO: fix
+
 screen.key('u', function(ch, key){
   title_text.setContent("imgurizer | " + "usersub/newest".white);
   user_mode = false;
+  search_mode = false;
   //user-sub
   _section = "user";
   _sort = "time";
@@ -314,6 +322,7 @@ screen.key('u', function(ch, key){
 screen.key('g', function(ch, key){
   title_text.setContent("imgurizer | " + "gallery".white);
   user_mode = false;
+  search_mode = false;
   _section = "hot";
   _sort = "viral";
   page = 0;
@@ -329,10 +338,10 @@ screen.key('a', function(ch, key){
 
   screen.append(prompt);
   prompt.input("Search for a user","", function(err, value){
-    //title_text.setContent(value);
     getUser(value, function(err, res, body){
       if(JSON.parse(body).success === true){
         user_mode = true;
+        search_mode = false;
         _user = value;
         title_text.setContent("imgurizer | " + ("user:" + _user).white);
         init();
@@ -341,6 +350,25 @@ screen.key('a', function(ch, key){
         title_text.setContent("imgurizer | " + "user not found!".white);
       }
     });
+
+    screen.remove(prompt);
+    screen.render();
+  });
+});
+
+screen.key('s', function(ch, key){
+  var prompt = blessed.prompt({
+    vi: true,
+    keys: true
+  });
+
+  screen.append(prompt);
+  prompt.input("Input search term","", function(err, value){
+    user_mode = false;
+    search_mode = true;
+    _search = value;
+    title_text.setContent("imgurizer | " + ("search: " + _search).white);
+    init();
 
     screen.remove(prompt);
     screen.render();
@@ -374,6 +402,7 @@ function addPost(obj){
 }
 
 function addAlbumPost(index, obj){
+  title_text.setContent(title_text.getContent() + index);
   ImageToAscii(obj.link, function(err, converted) {
     if(curr.indexOf(obj.id) !== -1){
       if(converted){}
@@ -381,7 +410,7 @@ function addAlbumPost(index, obj){
 
       if(obj.description){}
       else{obj.description = "";}
-      album_content[index] = converted + obj.description;
+      album_content[index] = converted + obj.description + "\n";
       post_box.setContent(album_content.join("\n"));
       scroll = 0;
       setScroll();
@@ -398,6 +427,10 @@ function setScroll(){
 function formatComments(id, album){
   getComments(id, album, function(err, res, body){
     comments = JSON.parse(body).data;
+    if(comments.length > comment_cutoff){
+      comments = comments.slice(0, comment_cutoff);
+    }
+
     var res = "\n\n" + "Comments".bold.underline.blue + "\n";
     for(var i = 0; i < comments.length; i++){
       var the_comment = "| " + comments[i].author.yellow + " " + String(comments[i].ups).green + " " + String(comments[i].downs).red + " " + comments[i].children.length + " replies";
@@ -425,9 +458,15 @@ function init(){
   getGallery(0, function(err, res, body){
     //TODO: handle error
       var json = JSON.parse(body).data;
-      if(!err && json.length > 0){
+      if(!err){
         gallery = json;
-        setPost(0);
+        if(json.length > 0){
+          setPost(0);
+        }
+        else{
+          post_box.setContent("No posts found!");
+          post_text.setContent("No posts found!");
+        }
       }
       else{
         console.log("error!")
