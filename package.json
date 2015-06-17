@@ -1,7 +1,7 @@
 {
   "name": "imgurize",
   "description": "an Imgur browser in the terminal",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "homepage": "https://github.com/mkaminsky11/imgurize",
   "author": {
     "name": "Michael Kaminsky",
@@ -33,6 +33,6 @@
   "keywords": ["imgur","terminal","command line"],
   "preferGlobal": "true",
   "bin": {
-    "cleat" : "lib/imgurize.js"
+    "imgurize" : "lib/imgurize.js"
   }
 }
