@@ -1,6 +1,8 @@
 # imgurize
 an Imgur browser in the terminal, with images converted into colored ascii art!
 
+![demo](img/demo.gif)
+
 ```shell
 sudo npm install -g imgurize #install
 imgurize #run
